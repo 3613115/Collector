@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Collector</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="page-shell">
+    <header class="hero">
+      <div>
+        <p class="eyebrow">Cozy idle clicker</p>
+        <h1>Collector</h1>
+        <p class="tagline">Gather glowing energy orbs, improve your collector, and watch your tiny engine sparkle.</p>
+      </div>
+      <button id="muteButton" class="icon-button" type="button" aria-pressed="false" aria-label="Mute sounds">🔊 Sound</button>
+    </header>
+
+    <main class="game-layout">
+      <section class="play-card panel" aria-labelledby="energyHeading">
+        <div class="energy-board">
+          <p id="energyHeading" class="label">Energy</p>
+          <div id="energyAmount" class="energy-amount">0</div>
+          <div class="rate-row">
+            <span><strong id="perClickAmount">1</strong> / click</span>
+            <span><strong id="energyPerSecond">0</strong> / sec</span>
+          </div>
+        </div>
+
+        <div class="collector-wrap">
+          <button id="collectorButton" class="collector-button" type="button" aria-label="Collect energy">
+            <span class="collector-glow"></span>
+            <span class="collector-core">✦</span>
+          </button>
+          <div id="floatLayer" class="float-layer" aria-hidden="true"></div>
+        </div>
+
+        <div class="stats-grid" aria-label="Game statistics">
+          <div class="stat-card">
+            <span class="stat-label">Total earned</span>
+            <strong id="totalEnergy">0</strong>
+          </div>
+          <div class="stat-card">
+            <span class="stat-label">Upgrades bought</span>
+            <strong id="upgradesBought">0</strong>
+          </div>
+          <div class="stat-card">
+            <span class="stat-label">Bonus chance</span>
+            <strong id="bonusChance">0%</strong>
+          </div>
+        </div>
+      </section>
+
+      <aside class="side-stack">
+        <section class="panel" aria-labelledby="upgradesHeading">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">Spend Energy</p>
+              <h2 id="upgradesHeading">Upgrades</h2>
+            </div>
+          </div>
+          <div id="upgradesList" class="upgrades-list"></div>
+        </section>
+
+        <section class="panel" aria-labelledby="achievementsHeading">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">Milestones</p>
+              <h2 id="achievementsHeading">Achievements</h2>
+            </div>
+          </div>
+          <div id="achievementsList" class="achievements-list"></div>
+        </section>
+
+        <section class="panel compact-panel" aria-label="Progress controls">
+          <button id="resetButton" class="danger-button" type="button">Reset progress</button>
+          <p class="small-note">Progress saves automatically in this browser.</p>
+        </section>
+      </aside>
+    </main>
+  </div>
+
+  <div id="toastLayer" class="toast-layer" aria-live="polite" aria-atomic="true"></div>
+
+  <script src="script.js"></script>
+</body>
+</html>
