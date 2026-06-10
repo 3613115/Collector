@@ -1,6 +1,8 @@
-const SAVE_KEY = "collectorSaveV3";
-const LEGACY_SAVE_KEY = "collectorSaveV1";
-const LEADERBOARD_KEY = "collectorLeaderboardV3";
+const SAVE_KEY = "collectorSaveV4";
+const LEGACY_SAVE_KEY = "collectorSaveV3";
+const OLDEST_SAVE_KEY = "collectorSaveV1";
+const LEADERBOARD_KEY = "collectorLeaderboardV4";
+const LEGACY_LEADERBOARD_KEY = "collectorLeaderboardV3";
 const OFFLINE_CAP_MS = 8 * 60 * 60 * 1000;
 const ACTIVE_QUEST_COUNT = 3;
 const PURCHASE_FLASH_MS = 520;
@@ -47,7 +49,38 @@ const collectionItems = [
   { id: "eventComet", name: "Event Comet", rarity: "Epic", icon: "☄️", bonus: "+3% event rewards", trigger: "Complete a limited-time event task." },
   { id: "prestigeCrown", name: "Prestige Crown", rarity: "Epic", icon: "👑", bonus: "+3% all production", trigger: "Prestige once." },
   { id: "ancientAlbum", name: "Ancient Album", rarity: "Epic", icon: "📖", bonus: "+4% collection bonus", trigger: "Buy it with Prestige points." },
+  { id: "starlightVoucher", name: "Starlight Voucher", rarity: "Legendary", icon: "🎟️", bonus: "+5% event rewards", trigger: "Buy it in the Event Shop." },
 ];
+
+
+const skinDefinitions = [
+  { id: "defaultCore", name: "Default Core", rarity: "Common", icon: "✦", condition: "Available from the start.", bonus: "Cozy classic glow", className: "skin-default-core", isUnlocked: () => true },
+  { id: "neonOrb", name: "Neon Orb", rarity: "Rare", icon: "●", condition: "Reach 1,000 total Energy.", bonus: "+1% all production", className: "skin-neon-orb", multiplierBonus: 0.01, isUnlocked: () => state.totalEnergy >= 1000 },
+  { id: "crystalStar", name: "Crystal Star", rarity: "Rare", icon: "✧", condition: "Unlock 4 collectibles.", bonus: "+1% Energy per click", className: "skin-crystal-star", clickBonus: 0.01, isUnlocked: () => unlockedCollectionCount() >= 4 },
+  { id: "luckyCat", name: "Lucky Cat", rarity: "Epic", icon: "😺", condition: "Complete 10 quests.", bonus: "+2% lucky click chance", className: "skin-lucky-cat", luckyBonus: 0.02, isUnlocked: () => state.questsCompleted >= 10 },
+  { id: "spaceGem", name: "Space Gem", rarity: "Epic", icon: "◆", condition: "Prestige once.", bonus: "+2% Energy per second", className: "skin-space-gem", autoBonus: 0.02, isUnlocked: () => state.prestige.count >= 1 },
+  { id: "goldenCore", name: "Golden Core", rarity: "Legendary", icon: "✹", condition: "Buy it from the Event Shop.", bonus: "+3% all production", className: "skin-golden-core", multiplierBonus: 0.03, isUnlocked: () => Boolean(state.skins.unlocked.goldenCore) },
+];
+
+const collectionCompletionRewards = [
+  { percent: 25, reward: () => ({ energy: 500 }), label: "+500 Energy" },
+  { percent: 50, reward: () => ({ energy: 2500, tokens: 5 }), label: "+2.5K Energy and 5 Event Tokens" },
+  { percent: 75, reward: () => ({ energy: 10000, prestige: 1 }), label: "+10K Energy and 1 Prestige Point" },
+  { percent: 100, reward: () => ({ energy: 50000, tokens: 25, prestige: 3 }), label: "+50K Energy, 25 Tokens, and 3 Prestige Points" },
+];
+
+const dailyChallengeTemplates = [
+  { type: "challengeEnergy", label: "Earn {target} Energy today", goal: () => Math.max(5000, Math.round(energyPerClick() * 300 + energyPerSecond() * 900)), current: () => state.totalEnergy },
+  { type: "challengeUpgrades", label: "Buy {target} upgrades today", goal: () => 10, current: () => totalUpgradeLevels() },
+  { type: "challengeClicks", label: "Click {target} times today", goal: () => 100, current: () => state.clicks },
+  { type: "challengeQuests", label: "Complete {target} quests today", goal: () => 5, current: () => state.questsCompleted },
+];
+
+const eventShopRewards = {
+  energyBundle: { name: "Energy Bundle", description: "Instant Energy based on your current run.", cost: 8, repeatable: true },
+  starlightBoost: { name: "Starlight Boost", description: "Temporary +25% production for 10 minutes.", cost: 14, repeatable: true },
+  goldenCoreSkin: { name: "Golden Core", description: "Exclusive Legendary collector skin and Starlight Voucher collectible.", cost: 30, repeatable: false },
+};
 
 const prestigeShopDefinitions = {
   starlitContract: {
@@ -127,6 +160,13 @@ const defaultState = {
   achievements: {},
   collection: {},
   prestige: { count: 0, points: 0, spent: {}, cosmetics: { prismSkin: false } },
+  skins: { equipped: "defaultCore", unlocked: { defaultCore: true } },
+  collectionRewards: {},
+  dailyChallenge: { date: "", type: "", title: "", start: 0, goal: 0, target: 0, claimed: false },
+  eventTokens: 0,
+  eventShop: { purchased: {}, boostUntil: 0 },
+  runStartedAt: null,
+  fastest10kMs: null,
   dailyTasks: { date: "", tasks: [] },
   event: { cycleKey: "", startAt: 0, endAt: 0, tasks: [] },
   eventTasksCompleted: 0,
@@ -149,6 +189,9 @@ const elements = {
   questsCompletedQuick: document.querySelector("#questsCompletedQuick"),
   prestigePointsQuick: document.querySelector("#prestigePointsQuick"),
   collectionCountQuick: document.querySelector("#collectionCountQuick"),
+  collectionCompletionLabel: document.querySelector("#collectionCompletionLabel"),
+  collectionRewardLabel: document.querySelector("#collectionRewardLabel"),
+  collectionPanelGrid: document.querySelector("#collectionPanelGrid"),
   achievementCountQuick: document.querySelector("#achievementCountQuick"),
   collectorButton: document.querySelector("#collectorButton"),
   floatLayer: document.querySelector("#floatLayer"),
@@ -170,6 +213,17 @@ const elements = {
   prestigeCount: document.querySelector("#prestigeCount"),
   prestigeShop: document.querySelector("#prestigeShop"),
   leaderboardList: document.querySelector("#leaderboardList"),
+  skinsGrid: document.querySelector("#skinsGrid"),
+  equippedSkinLabel: document.querySelector("#equippedSkinLabel"),
+  dailyChallengeCard: document.querySelector("#dailyChallengeCard"),
+  dailyChallengeStatus: document.querySelector("#dailyChallengeStatus"),
+  eventTokenCount: document.querySelector("#eventTokenCount"),
+  eventShopList: document.querySelector("#eventShopList"),
+  shareButton: document.querySelector("#shareButton"),
+  shareFallback: document.querySelector("#shareFallback"),
+  shareText: document.querySelector("#shareText"),
+  tabButtons: document.querySelectorAll(".tab-button"),
+  tabPanels: document.querySelectorAll(".tab-panel"),
   toastLayer: document.querySelector("#toastLayer"),
   resetButton: document.querySelector("#resetButton"),
   muteButton: document.querySelector("#muteButton"),
@@ -216,12 +270,11 @@ function unlockedCollectionCount(currentState = state) {
 
 function collectionBonus() {
   return collectionItems.reduce((bonus, item) => {
-    if (!state.collection[item.id]) {
-      return bonus;
-    }
+    if (!state.collection[item.id]) return bonus;
     if (item.rarity === "Common") return bonus + 0.01;
     if (item.rarity === "Rare") return bonus + 0.02;
-    return bonus + 0.03;
+    if (item.rarity === "Epic") return bonus + 0.03;
+    return bonus + 0.05;
   }, state.collection.ancientAlbum ? 0.01 : 0);
 }
 
@@ -237,16 +290,28 @@ function prestigeBonus() {
   return (state.prestige.spent.starlitContract || 0) * 0.05;
 }
 
+function equippedSkin() {
+  return skinDefinitions.find((skin) => skin.id === state.skins.equipped) || skinDefinitions[0];
+}
+
+function skinMultiplierBonus() {
+  return equippedSkin().multiplierBonus || 0;
+}
+
+function eventBoostBonus() {
+  return state.eventShop.boostUntil > Date.now() ? 0.25 : 0;
+}
+
 function productionMultiplier() {
-  return 1 + state.upgrades.energyCore * 0.1 + milestoneBonus() + collectionBonus() + achievementBonus() + prestigeBonus();
+  return 1 + state.upgrades.energyCore * 0.1 + milestoneBonus() + collectionBonus() + achievementBonus() + prestigeBonus() + skinMultiplierBonus() + eventBoostBonus();
 }
 
 function clickBonus() {
-  return state.collection.gearCharm ? 1.01 : 1;
+  return (state.collection.gearCharm ? 1.01 : 1) + (equippedSkin().clickBonus || 0);
 }
 
 function autoBonus() {
-  return state.collection.autoSprite ? 1.02 : 1;
+  return (state.collection.autoSprite ? 1.02 : 1) + (equippedSkin().autoBonus || 0);
 }
 
 function energyPerClick() {
@@ -258,7 +323,7 @@ function energyPerSecond() {
 }
 
 function luckyChance() {
-  return Math.min(0.75, state.upgrades.luckySpark * 0.05);
+  return Math.min(0.75, state.upgrades.luckySpark * 0.05 + (equippedSkin().luckyBonus || 0));
 }
 
 function upgradeCost(id) {
@@ -293,14 +358,23 @@ function questRewardAmount(quest) {
 
 function eventRewardAmount(task) {
   const comet = state.collection.eventComet ? 1.03 : 1;
-  return Math.round(Math.max(250, energyPerClick() * 60 + energyPerSecond() * 360 + state.totalEnergy * 0.02 + task.goal * 12) * comet);
+  const voucher = state.collection.starlightVoucher ? 1.05 : 1;
+  return Math.round(Math.max(250, energyPerClick() * 60 + energyPerSecond() * 360 + state.totalEnergy * 0.02 + task.goal * 12) * comet * voucher);
 }
 
 function addEnergy(amount, options = {}) {
   if (amount <= 0) return;
   state.energy += amount;
   state.totalEnergy += amount;
+  const crossedTenK = state.totalEnergy >= 10000 && !state.fastest10kMs;
   state.bestRunEnergy = Math.max(state.bestRunEnergy || 0, state.totalEnergy);
+  if (crossedTenK && state.runStartedAt) {
+    state.fastest10kMs = Date.now() - state.runStartedAt;
+    recordLeaderboard("Fastest 10K Energy", state.fastest10kMs, `Reached in ${formatDuration(state.fastest10kMs)}`, "time");
+    showToast("New speed record!", `10,000 Energy reached in ${formatDuration(state.fastest10kMs)}.`);
+    playSound("record");
+  }
+  updateLeaderboardRecords(true);
   checkMilestones();
   checkCollections();
   checkAchievements();
@@ -318,6 +392,7 @@ function collectEnergy(event) {
   addEnergy(amount);
   showFloatingText(event, `+${formatNumber(amount)}${luckyHit ? " Lucky!" : ""}`);
   createClickParticles(event, luckyHit);
+  updateDailyChallenge();
   playSound(luckyHit ? "achievement" : "click");
   elements.collectorButton.classList.remove("pop");
   void elements.collectorButton.offsetWidth;
@@ -330,6 +405,8 @@ function buyUpgrade(id) {
   if (state.energy < cost) return;
   state.energy -= cost;
   state.upgrades[id] += 1;
+  glowBurst();
+  updateDailyChallenge();
   lastPurchasedUpgrade = id;
   playSound("upgrade");
   checkCollections();
@@ -356,6 +433,7 @@ function buyPrestigeShopItem(id) {
   state.prestige.spent[id] = level + 1;
   if (id === "ancientAlbum") unlockCollection("ancientAlbum");
   if (id === "prismSkin") state.prestige.cosmetics.prismSkin = true;
+  if (id === "prismSkin") unlockSkin("neonOrb");
   showToast("Prestige shop", `${item.name} purchased.`);
   playSound("achievement");
   render();
@@ -368,6 +446,7 @@ function claimDailyReward() {
   state.lastDailyClaimDate = todayKey();
   state.dailyClaims += 1;
   addEnergy(reward);
+  updateDailyChallenge();
   showToast("Daily reward claimed!", `You received ${formatNumber(reward)} Energy.`);
   playSound("achievement");
 }
@@ -391,7 +470,8 @@ function confirmPrestige() {
   if (points <= 0) return;
   state.prestige.count += 1;
   state.prestige.points += points;
-  recordLeaderboard(`Rebirth ${state.prestige.count}`, state.totalEnergy, state.prestige.count);
+  recordLeaderboard("Highest Prestige Points", state.prestige.points + points, `${state.prestige.count + 1} rebirths`, "prestige");
+  updateLeaderboardRecords();
   state.energy = 0;
   state.totalEnergy = 0;
   state.clicks = 0;
@@ -399,6 +479,8 @@ function confirmPrestige() {
   state.milestones = {};
   state.upgrades = createDefaultState().upgrades;
   state.bestRunEnergy = 0;
+  state.fastest10kMs = null;
+  state.runStartedAt = Date.now();
   state.dailyTasks = createDefaultState().dailyTasks;
   state.event = createDefaultState().event;
   ensureActiveQuests();
@@ -407,7 +489,8 @@ function confirmPrestige() {
   checkAchievements();
   closeModal(elements.prestigeModal);
   showToast("Rebirth complete", `Gained ${formatNumber(points)} Prestige point${points === 1 ? "" : "s"}.`);
-  playSound("achievement");
+  celebrate("prestige");
+  playSound("prestige");
   render();
   saveGame();
 }
@@ -425,7 +508,10 @@ function render() {
   elements.achievementCountQuick.textContent = `${unlockedAchievementCount()} / ${achievements.length}`;
   elements.muteButton.textContent = state.muted ? "🔇 Muted" : "🔊 Sound";
   elements.muteButton.setAttribute("aria-pressed", String(state.muted));
+  skinDefinitions.forEach((skin) => elements.collectorButton.classList.remove(skin.className));
   elements.collectorButton.classList.toggle("prism-skin", Boolean(state.prestige.cosmetics.prismSkin));
+  elements.collectorButton.classList.add(equippedSkin().className);
+  elements.collectorButton.querySelector(".collector-core").textContent = equippedSkin().icon;
 
   elements.statEnergy.textContent = formatNumber(state.energy);
   elements.statTotalEnergy.textContent = formatNumber(state.totalEnergy);
@@ -451,6 +537,9 @@ function render() {
   renderMilestones();
   renderAchievements();
   renderCollection();
+  renderSkins();
+  renderDailyChallenge();
+  renderEventShop();
   renderLeaderboard();
 }
 
@@ -544,7 +633,7 @@ function renderTimedTasks() {
   const end = new Date(state.event.endAt);
   const remainingDays = Math.max(0, Math.ceil((state.event.endAt - Date.now()) / MS_PER_DAY));
   elements.eventName.textContent = "Starlight Festival";
-  elements.eventDates.textContent = `${formatDate(state.event.startAt)} → ${formatDate(state.event.endAt)} · rewards preview: Energy, Prestige flavor, Event Comet`;
+  elements.eventDates.textContent = `${formatDate(state.event.startAt)} → ${formatDate(state.event.endAt)} · event tasks award Energy and Tokens`;
   elements.eventTimer.textContent = `${remainingDays} day${remainingDays === 1 ? "" : "s"} left`;
 }
 
@@ -613,7 +702,12 @@ function renderAchievements() {
 
 function renderCollection() {
   elements.collectionGrid.innerHTML = "";
+  const completion = collectionCompletionPercent();
   elements.collectionModalCount.textContent = `${unlockedCollectionCount()} / ${collectionItems.length}`;
+  elements.collectionCompletionLabel.textContent = `${completion}%`;
+  const nextReward = collectionCompletionRewards.find((reward) => !state.collectionRewards[reward.percent]);
+  elements.collectionRewardLabel.textContent = nextReward ? `Next completion reward: ${nextReward.percent}% for ${nextReward.label}.` : "Collection complete! All completion rewards claimed.";
+  elements.collectionPanelGrid.innerHTML = "";
   collectionItems.forEach((item) => {
     const unlocked = Boolean(state.collection[item.id]);
     const card = document.createElement("article");
@@ -625,6 +719,71 @@ function renderCollection() {
         <p class="small-note">${unlocked ? `${item.rarity} · ${item.bonus}` : `Silhouette · ${item.trigger}`}</p>
       </div>`;
     elements.collectionGrid.append(card);
+    elements.collectionPanelGrid.append(card.cloneNode(true));
+  });
+}
+
+
+function collectionCompletionPercent() {
+  return Math.floor((unlockedCollectionCount() / collectionItems.length) * 100);
+}
+
+function renderSkins() {
+  elements.skinsGrid.innerHTML = "";
+  elements.equippedSkinLabel.textContent = equippedSkin().name;
+  skinDefinitions.forEach((skin) => {
+    const unlocked = Boolean(state.skins.unlocked[skin.id]) || skin.isUnlocked();
+    if (unlocked && !state.skins.unlocked[skin.id]) state.skins.unlocked[skin.id] = true;
+    const equipped = state.skins.equipped === skin.id;
+    const card = document.createElement("article");
+    card.className = `skin-card ${unlocked ? "unlocked" : "locked"} rarity-${skin.rarity.toLowerCase()}`;
+    card.innerHTML = `
+      <div class="skin-preview ${skin.className}"><span>${unlocked ? skin.icon : "?"}</span></div>
+      <div>
+        <div class="collection-name">${skin.name}</div>
+        <p class="small-note"><span class="rarity-badge rarity-${skin.rarity.toLowerCase()}">${skin.rarity}</span> ${unlocked ? skin.bonus : skin.condition}</p>
+      </div>
+      <button class="buy-button" type="button" ${unlocked && !equipped ? "" : "disabled"}>${equipped ? "Equipped" : unlocked ? "Equip" : "Locked"}</button>`;
+    card.querySelector("button").addEventListener("click", () => equipSkin(skin.id));
+    elements.skinsGrid.append(card);
+  });
+}
+
+function renderDailyChallenge() {
+  ensureDailyChallenge();
+  const challenge = state.dailyChallenge;
+  const progress = dailyChallengeProgress();
+  const complete = progress >= challenge.goal;
+  const reward = dailyChallengeReward();
+  elements.dailyChallengeStatus.textContent = challenge.claimed ? "Claimed" : complete ? "Complete" : "Active";
+  elements.dailyChallengeCard.innerHTML = "";
+  const card = createTaskCard(challenge, progress, challenge.goal, challenge.claimed ? "Claimed" : `+${formatNumber(reward.energy)} + ${reward.tokens} Tokens`, "daily-task-card challenge-card");
+  const button = document.createElement("button");
+  button.className = "buy-button task-claim-button";
+  button.type = "button";
+  button.disabled = challenge.claimed || !complete;
+  button.textContent = challenge.claimed ? "Challenge claimed" : complete ? "Claim big reward" : "In progress";
+  button.addEventListener("click", claimDailyChallenge);
+  card.append(button);
+  elements.dailyChallengeCard.append(card);
+}
+
+function renderEventShop() {
+  elements.eventTokenCount.textContent = `${formatNumber(state.eventTokens)} Token${state.eventTokens === 1 ? "" : "s"}`;
+  elements.eventShopList.innerHTML = "";
+  Object.entries(eventShopRewards).forEach(([id, reward]) => {
+    const owned = state.eventShop.purchased[id] && !reward.repeatable;
+    const affordable = state.eventTokens >= reward.cost && !owned;
+    const card = document.createElement("article");
+    card.className = "event-shop-card";
+    card.innerHTML = `
+      <div>
+        <div class="upgrade-name">${reward.name}</div>
+        <p class="small-note">${reward.description}</p>
+      </div>
+      <button class="buy-button" type="button" ${affordable ? "" : "disabled"}>${owned ? "Owned" : `Spend ${reward.cost}`}</button>`;
+    card.querySelector("button").addEventListener("click", () => buyEventShopReward(id));
+    elements.eventShopList.append(card);
   });
 }
 
@@ -638,7 +797,7 @@ function renderLeaderboard() {
   entries.forEach((entry, index) => {
     const row = document.createElement("div");
     row.className = "leaderboard-row";
-    row.innerHTML = `<span>#${index + 1} ${entry.name}</span><strong>${formatNumber(entry.energy)} Energy · P${entry.prestige}</strong>`;
+    row.innerHTML = `<span>#${index + 1} ${entry.name}</span><strong>${entry.display || `${formatNumber(entry.energy || entry.value)} Energy · P${entry.prestige || 0}`}</strong>`;
     elements.leaderboardList.append(row);
   });
 }
@@ -648,6 +807,7 @@ function checkAchievements() {
     if (!state.achievements[achievement.id] && achievement.isUnlocked(state)) {
       state.achievements[achievement.id] = true;
       showToast("Achievement unlocked!", `${achievement.name} · achievement bonus improved.`);
+      celebrate("achievement");
       playSound("achievement");
     }
   });
@@ -672,6 +832,8 @@ function checkCollections() {
   if (energyPerSecond() >= 10) unlockCollection("autoSprite");
   if (state.milestones.energy1k) unlockCollection("milestoneBloom");
   if (state.prestige.count >= 1) unlockCollection("prestigeCrown");
+  checkSkinUnlocks();
+  checkCollectionCompletionRewards();
 }
 
 function unlockCollection(id) {
@@ -680,8 +842,52 @@ function unlockCollection(id) {
   state.collection[id] = true;
   if (item) {
     showToast("Collection unlocked!", `${item.icon} ${item.name} (${item.rarity}) · ${item.bonus}`);
+    celebrate("collection");
     playSound("achievement");
   }
+  checkCollectionCompletionRewards();
+}
+
+
+function checkSkinUnlocks() {
+  skinDefinitions.forEach((skin) => {
+    if (!state.skins.unlocked[skin.id] && skin.isUnlocked()) unlockSkin(skin.id);
+  });
+}
+
+function unlockSkin(id) {
+  if (state.skins.unlocked[id]) return;
+  const skin = skinDefinitions.find((entry) => entry.id === id);
+  state.skins.unlocked[id] = true;
+  if (skin) {
+    showToast("Skin unlocked!", `${skin.name} (${skin.rarity}) is ready to equip.`);
+    celebrate("skin");
+    playSound("skin");
+  }
+}
+
+function equipSkin(id) {
+  if (!state.skins.unlocked[id]) return;
+  state.skins.equipped = id;
+  const skin = equippedSkin();
+  showToast("Skin equipped", `${skin.name} is now your Collector look.`);
+  render();
+  saveGame();
+}
+
+function checkCollectionCompletionRewards() {
+  const completion = collectionCompletionPercent();
+  collectionCompletionRewards.forEach((reward) => {
+    if (completion < reward.percent || state.collectionRewards[reward.percent]) return;
+    const payout = reward.reward();
+    state.collectionRewards[reward.percent] = true;
+    if (payout.energy) { state.energy += payout.energy; state.totalEnergy += payout.energy; }
+    if (payout.tokens) state.eventTokens += payout.tokens;
+    if (payout.prestige) state.prestige.points += payout.prestige;
+    showToast("Collection reward!", `${reward.percent}% complete · ${reward.label}`);
+    celebrate("collection");
+    playSound("achievement");
+  });
 }
 
 function createQuest(excludedTypes = []) {
@@ -728,8 +934,10 @@ function checkQuests() {
     state.energy += reward;
     state.totalEnergy += reward;
     showToast("Quest complete!", `${quest.title} · +${formatNumber(reward)} Energy`);
+    celebrate("quest");
     playSound("achievement");
   });
+  if (completed.length > 0) updateLeaderboardRecords();
   ensureActiveQuests();
   checkingQuests = false;
   if (completed.length > 0) {
@@ -742,6 +950,7 @@ function checkQuests() {
 
 function ensureTimedTasks() {
   ensureDailyTasks();
+  ensureDailyChallenge();
   ensureEventTasks();
 }
 
@@ -757,6 +966,55 @@ function ensureDailyTasks() {
       return { id: `${template.type}-${key}`, type: template.type, title: template.label.replace("{target}", formatNumber(goal)), start, goal, target: start + goal, claimed: false };
     }),
   };
+}
+
+function ensureDailyChallenge() {
+  const key = todayKey();
+  if (state.dailyChallenge.date === key && state.dailyChallenge.type) return;
+  const template = dailyChallengeTemplates[Math.floor(Math.random() * dailyChallengeTemplates.length)];
+  const goal = Math.round(template.goal());
+  const start = template.current();
+  state.dailyChallenge = {
+    date: key,
+    type: template.type,
+    title: template.label.replace("{target}", formatNumber(goal)),
+    start,
+    goal,
+    target: start + goal,
+    claimed: false,
+  };
+}
+
+function dailyChallengeCurrentValue() {
+  const template = dailyChallengeTemplates.find((entry) => entry.type === state.dailyChallenge.type);
+  return template ? template.current() : 0;
+}
+
+function dailyChallengeProgress() {
+  ensureDailyChallenge();
+  return Math.max(0, Math.min(state.dailyChallenge.goal, dailyChallengeCurrentValue() - state.dailyChallenge.start));
+}
+
+function dailyChallengeReward() {
+  return { energy: Math.round(Math.max(1500, energyPerClick() * 120 + energyPerSecond() * 600 + state.totalEnergy * 0.05)), tokens: 6 };
+}
+
+function updateDailyChallenge() {
+  ensureDailyChallenge();
+}
+
+function claimDailyChallenge() {
+  ensureDailyChallenge();
+  if (state.dailyChallenge.claimed || dailyChallengeProgress() < state.dailyChallenge.goal) return;
+  const reward = dailyChallengeReward();
+  state.dailyChallenge.claimed = true;
+  state.eventTokens += reward.tokens;
+  addEnergy(reward.energy, { skipEventCheck: true });
+  showToast("Daily challenge complete!", `${state.dailyChallenge.title} · +${formatNumber(reward.energy)} Energy and ${reward.tokens} Tokens.`);
+  celebrate("daily");
+  playSound("daily");
+  render();
+  saveGame();
 }
 
 function eventWindow() {
@@ -800,9 +1058,11 @@ function claimTimedTask(taskId) {
   const reward = isEvent ? eventRewardAmount(task) : dailyTaskReward(task);
   task.claimed = true;
   state.eventTasksCompleted += 1;
+  if (isEvent) state.eventTokens += 4;
   addEnergy(reward, { skipEventCheck: true });
   if (isEvent) unlockCollection("eventComet");
-  showToast(isEvent ? "Event task complete!" : "Daily task complete!", `${task.title} · +${formatNumber(reward)} Energy`);
+  showToast(isEvent ? "Event task complete!" : "Daily task complete!", `${task.title} · +${formatNumber(reward)} Energy${isEvent ? " and 4 Tokens" : ""}`);
+  celebrate(isEvent ? "event" : "quest");
   checkAchievements();
   render();
   saveGame();
@@ -810,6 +1070,7 @@ function claimTimedTask(taskId) {
 
 function checkTimedTasks() {
   ensureTimedTasks();
+  updateDailyChallenge();
   checkAchievements();
 }
 
@@ -848,6 +1109,29 @@ function createClickParticles(event, luckyHit) {
   }
 }
 
+
+function glowBurst() {
+  const burst = document.createElement("span");
+  burst.className = "glow-burst";
+  elements.particleLayer.append(burst);
+  setTimeout(() => burst.remove(), 700);
+}
+
+function celebrate(type = "sparkle") {
+  const count = type === "prestige" || type === "skin" ? 24 : 14;
+  for (let index = 0; index < count; index += 1) {
+    const sparkle = document.createElement("span");
+    const angle = (Math.PI * 2 * index) / count;
+    const distance = 70 + Math.random() * 90;
+    sparkle.className = `celebration celebration-${type}`;
+    sparkle.textContent = ["✦", "✧", "★", "♡"][index % 4];
+    sparkle.style.setProperty("--x", `${Math.cos(angle) * distance}px`);
+    sparkle.style.setProperty("--y", `${Math.sin(angle) * distance}px`);
+    elements.particleLayer.append(sparkle);
+    setTimeout(() => sparkle.remove(), 900);
+  }
+}
+
 function showToast(title, message) {
   const toast = document.createElement("div");
   toast.className = "toast";
@@ -877,6 +1161,13 @@ function formatNumber(value) {
   return `${scaled >= 100 ? scaled.toFixed(0) : scaled >= 10 ? scaled.toFixed(1) : scaled.toFixed(2)}${units[tier]}`;
 }
 
+function formatDuration(ms) {
+  const seconds = Math.max(1, Math.round(ms / 1000));
+  const minutes = Math.floor(seconds / 60);
+  const remainder = seconds % 60;
+  return minutes > 0 ? `${minutes}m ${remainder}s` : `${seconds}s`;
+}
+
 function formatDate(timestamp) {
   return new Date(timestamp).toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
@@ -898,6 +1189,17 @@ function normalizeState(parsed) {
     achievements: { ...defaultState.achievements, ...parsed.achievements },
     milestones: { ...defaultState.milestones, ...parsed.milestones },
     collection: { ...defaultState.collection, ...parsed.collection },
+    collectionRewards: { ...defaultState.collectionRewards, ...parsed.collectionRewards },
+    skins: {
+      ...defaultState.skins,
+      ...parsed.skins,
+      unlocked: { ...defaultState.skins.unlocked, ...(parsed.skins && parsed.skins.unlocked) },
+    },
+    eventShop: {
+      ...defaultState.eventShop,
+      ...parsed.eventShop,
+      purchased: { ...defaultState.eventShop.purchased, ...(parsed.eventShop && parsed.eventShop.purchased) },
+    },
     prestige: {
       ...defaultState.prestige,
       ...parsed.prestige,
@@ -905,21 +1207,24 @@ function normalizeState(parsed) {
       cosmetics: { ...defaultState.prestige.cosmetics, ...(parsed.prestige && parsed.prestige.cosmetics) },
     },
     dailyTasks: { ...defaultState.dailyTasks, ...parsed.dailyTasks, tasks: parsed.dailyTasks && Array.isArray(parsed.dailyTasks.tasks) ? parsed.dailyTasks.tasks : [] },
+    dailyChallenge: { ...defaultState.dailyChallenge, ...parsed.dailyChallenge },
     event: { ...defaultState.event, ...parsed.event, tasks: parsed.event && Array.isArray(parsed.event.tasks) ? parsed.event.tasks : [] },
     quests: Array.isArray(parsed.quests) ? parsed.quests : [],
   };
 }
 
 function loadGame() {
-  const saved = localStorage.getItem(SAVE_KEY) || localStorage.getItem(LEGACY_SAVE_KEY);
+  const saved = localStorage.getItem(SAVE_KEY) || localStorage.getItem(LEGACY_SAVE_KEY) || localStorage.getItem(OLDEST_SAVE_KEY);
   if (!saved) {
     const freshState = createDefaultState();
     freshState.lastPlayedAt = Date.now();
+    freshState.runStartedAt = Date.now();
     return freshState;
   }
   try {
     const parsed = JSON.parse(saved);
     const loadedState = normalizeState(parsed);
+    if (!loadedState.runStartedAt) loadedState.runStartedAt = Date.now();
     const previousLastPlayed = Number(parsed.lastPlayedAt);
     applyOfflineEarnings(loadedState, previousLastPlayed);
     loadedState.lastPlayedAt = Date.now();
@@ -951,17 +1256,81 @@ function applyOfflineEarnings(loadedState, previousLastPlayed) {
 
 function getLeaderboard() {
   try {
-    return JSON.parse(localStorage.getItem(LEADERBOARD_KEY)) || [];
+    const saved = localStorage.getItem(LEADERBOARD_KEY) || localStorage.getItem(LEGACY_LEADERBOARD_KEY);
+    return JSON.parse(saved) || [];
   } catch {
     return [];
   }
 }
 
-function recordLeaderboard(name, energy, prestige) {
+function leaderboardSortValue(entry) {
+  return entry.sortValue ?? entry.energy ?? entry.value ?? 0;
+}
+
+function recordLeaderboard(name, value, display, type = "energy", silent = false) {
   const entries = getLeaderboard();
-  entries.push({ name, energy: Math.round(energy), prestige, date: todayKey() });
-  entries.sort((a, b) => b.energy - a.energy || b.prestige - a.prestige);
-  localStorage.setItem(LEADERBOARD_KEY, JSON.stringify(entries.slice(0, 5)));
+  const sortValue = type === "time" ? -Math.round(value) : Math.round(value);
+  const existingBest = entries.find((entry) => entry.type === type && entry.name === name);
+  if (existingBest && leaderboardSortValue(existingBest) >= sortValue) return;
+  const filtered = entries.filter((entry) => !(entry.type === type && entry.name === name));
+  filtered.push({ name, value: Math.round(value), sortValue, display, type, date: todayKey() });
+  filtered.sort((a, b) => leaderboardSortValue(b) - leaderboardSortValue(a));
+  localStorage.setItem(LEADERBOARD_KEY, JSON.stringify(filtered.slice(0, 5)));
+  if (!silent) {
+    showToast("Local record!", `${name}: ${display}`);
+    playSound("record");
+  }
+}
+
+function updateLeaderboardRecords(silent = false) {
+  recordLeaderboard("Highest Total Energy", state.bestRunEnergy || state.totalEnergy, `${formatNumber(state.bestRunEnergy || state.totalEnergy)} Energy`, "energy", silent);
+  recordLeaderboard("Highest Prestige Points", state.prestige.points, `${formatNumber(state.prestige.points)} Prestige Points`, "prestige", silent);
+  recordLeaderboard("Most Quests Completed", state.questsCompleted, `${formatNumber(state.questsCompleted)} quests`, "quests", silent);
+}
+
+
+function buyEventShopReward(id) {
+  const reward = eventShopRewards[id];
+  if (!reward || state.eventTokens < reward.cost) return;
+  if (!reward.repeatable && state.eventShop.purchased[id]) return;
+  state.eventTokens -= reward.cost;
+  state.eventShop.purchased[id] = true;
+  if (id === "energyBundle") addEnergy(Math.max(2500, state.totalEnergy * 0.08 + energyPerClick() * 200), { skipEventCheck: true });
+  if (id === "starlightBoost") state.eventShop.boostUntil = Date.now() + 10 * 60 * 1000;
+  if (id === "goldenCoreSkin") {
+    unlockSkin("goldenCore");
+    unlockCollection("starlightVoucher");
+  }
+  showToast("Event reward purchased", `${reward.name} is yours!`);
+  celebrate("event");
+  playSound("eventPurchase");
+  render();
+  saveGame();
+}
+
+function shareProgress() {
+  const summary = `I collected ${formatNumber(state.totalEnergy)} Energy and reached Prestige ${state.prestige.count} in Collector!`;
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(summary).then(() => {
+      elements.shareFallback.classList.add("hidden");
+      showToast("Progress copied!", summary);
+    }).catch(() => showShareFallback(summary));
+  } else {
+    showShareFallback(summary);
+  }
+}
+
+function showShareFallback(summary) {
+  elements.shareText.value = summary;
+  elements.shareFallback.classList.remove("hidden");
+  elements.shareText.focus();
+  elements.shareText.select();
+  showToast("Share text ready", "Clipboard unavailable, so copy it from the box.");
+}
+
+function switchTab(tabName) {
+  elements.tabButtons.forEach((button) => button.classList.toggle("active", button.dataset.tab === tabName));
+  elements.tabPanels.forEach((panel) => panel.classList.toggle("active", panel.dataset.panel === tabName));
 }
 
 function resetProgress() {
@@ -976,10 +1345,12 @@ function resetProgress() {
   state.lastPlayedAt = Date.now();
   localStorage.removeItem(SAVE_KEY);
   localStorage.removeItem(LEGACY_SAVE_KEY);
+  localStorage.removeItem(OLDEST_SAVE_KEY);
   localStorage.removeItem(LEADERBOARD_KEY);
+  localStorage.removeItem(LEGACY_LEADERBOARD_KEY);
   ensureActiveQuests();
   ensureTimedTasks();
-  showToast("Progress reset", "A fresh Collector V3 run is ready.");
+  showToast("Progress reset", "A fresh Collector V4 run is ready.");
   render();
   saveGame();
 }
@@ -999,7 +1370,12 @@ function playSound(type) {
     click: { start: 520, end: 760, duration: 0.08, volume: 0.045, wave: "sine" },
     upgrade: { start: 420, end: 980, duration: 0.16, volume: 0.065, wave: "triangle" },
     achievement: { start: 740, end: 1320, duration: 0.22, volume: 0.075, wave: "sine" },
-  }[type];
+    skin: { start: 660, end: 1480, duration: 0.28, volume: 0.08, wave: "triangle" },
+    daily: { start: 520, end: 1240, duration: 0.24, volume: 0.075, wave: "sine" },
+    record: { start: 880, end: 1760, duration: 0.2, volume: 0.07, wave: "square" },
+    eventPurchase: { start: 480, end: 1120, duration: 0.2, volume: 0.07, wave: "triangle" },
+    prestige: { start: 360, end: 1440, duration: 0.34, volume: 0.08, wave: "sine" },
+  }[type] || { start: 520, end: 760, duration: 0.08, volume: 0.045, wave: "sine" };
   oscillator.type = settings.wave;
   oscillator.frequency.setValueAtTime(settings.start, now);
   oscillator.frequency.exponentialRampToValueAtTime(settings.end, now + settings.duration);
@@ -1036,6 +1412,8 @@ elements.helpButton.addEventListener("click", () => elements.helpModal.classList
 elements.helpCloseButton.addEventListener("click", () => closeModal(elements.helpModal));
 elements.collectionButton.addEventListener("click", () => elements.collectionModal.classList.remove("hidden"));
 elements.collectionCloseButton.addEventListener("click", () => closeModal(elements.collectionModal));
+elements.shareButton.addEventListener("click", shareProgress);
+elements.tabButtons.forEach((button) => button.addEventListener("click", () => switchTab(button.dataset.tab)));
 [elements.welcomeModal, elements.helpModal, elements.collectionModal, elements.prestigeModal].forEach(bindModalBackdrop);
 
 setInterval(() => {
@@ -1049,10 +1427,12 @@ setInterval(() => {
   saveGame();
 }, 5000);
 
+if (!state.runStartedAt) state.runStartedAt = Date.now();
 ensureActiveQuests();
 ensureTimedTasks();
 checkMilestones();
 checkCollections();
+checkSkinUnlocks();
 checkAchievements();
 checkQuests();
 checkTimedTasks();

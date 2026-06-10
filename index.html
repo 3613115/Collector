@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Collector V3</title>
+  <title>Collector V4</title>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -13,12 +13,13 @@
   <div class="page-shell">
     <header class="hero">
       <div>
-        <p class="eyebrow">Cozy idle clicker · Version 3</p>
+        <p class="eyebrow">Cozy idle clicker · Version 4</p>
         <h1>Collector</h1>
         <p class="tagline">Gather glowing Energy, build your collection, complete rotating events, and prestige into a brighter forever engine.</p>
       </div>
       <div class="hero-actions">
         <button id="collectionButton" class="icon-button secondary" type="button">Collection</button>
+        <button id="shareButton" class="icon-button secondary" type="button">Share Progress</button>
         <button id="helpButton" class="icon-button secondary" type="button">How to play</button>
         <button id="muteButton" class="icon-button" type="button" aria-pressed="false" aria-label="Mute sounds">🔊 Sound</button>
       </div>
@@ -75,8 +76,18 @@
       </section>
 
       <aside class="side-stack">
+        <nav class="tab-bar" aria-label="Collector systems">
+          <button class="tab-button active" type="button" data-tab="upgrades">Upgrades</button>
+          <button class="tab-button" type="button" data-tab="quests">Quests</button>
+          <button class="tab-button" type="button" data-tab="achievements">Achievements</button>
+          <button class="tab-button" type="button" data-tab="collection">Collection</button>
+          <button class="tab-button" type="button" data-tab="skins">Skins</button>
+          <button class="tab-button" type="button" data-tab="prestige">Prestige</button>
+          <button class="tab-button" type="button" data-tab="leaderboard">Leaderboard</button>
+          <button class="tab-button" type="button" data-tab="event">Event</button>
+        </nav>
 
-        <section class="panel event-card" aria-labelledby="eventHeading">
+        <section class="panel event-card tab-panel" data-panel="event" aria-labelledby="eventHeading">
           <div class="section-heading">
             <div>
               <p class="eyebrow">Limited-time sparkle</p>
@@ -90,9 +101,19 @@
           </div>
           <div id="dailyTasksList" class="quests-list"></div>
           <div id="eventTasksList" class="quests-list event-tasks"></div>
+          <div class="event-shop-box">
+            <div class="section-heading compact-heading">
+              <div>
+                <p class="eyebrow">Token shop</p>
+                <h3>Event Shop</h3>
+              </div>
+              <span id="eventTokenCount" class="status-pill">0 Tokens</span>
+            </div>
+            <div id="eventShopList" class="event-shop-list"></div>
+          </div>
         </section>
 
-        <section class="panel prestige-card" aria-labelledby="prestigeHeading">
+        <section class="panel prestige-card tab-panel" data-panel="prestige" aria-labelledby="prestigeHeading">
           <div class="section-heading">
             <div>
               <p class="eyebrow">Rebirth engine</p>
@@ -109,7 +130,7 @@
           <div id="prestigeShop" class="prestige-shop"></div>
         </section>
 
-        <section class="panel daily-card" aria-labelledby="dailyHeading">
+        <section class="panel daily-card tab-panel" data-panel="quests" aria-labelledby="dailyHeading">
           <div class="section-heading">
             <div>
               <p class="eyebrow">Come back tomorrow</p>
@@ -119,9 +140,19 @@
           </div>
           <p id="dailyDescription" class="small-note">Claim a scaling Energy gift once per day.</p>
           <button id="dailyRewardButton" class="claim-button" type="button">Claim reward</button>
+          <div class="daily-challenge-box">
+            <div class="section-heading compact-heading">
+              <div>
+                <p class="eyebrow">Big goal</p>
+                <h3>Daily Challenge</h3>
+              </div>
+              <span id="dailyChallengeStatus" class="status-pill">Ready</span>
+            </div>
+            <div id="dailyChallengeCard" class="quests-list"></div>
+          </div>
         </section>
 
-        <section class="panel" aria-labelledby="questsHeading">
+        <section class="panel tab-panel" data-panel="quests" aria-labelledby="questsHeading">
           <div class="section-heading">
             <div>
               <p class="eyebrow">Three active goals</p>
@@ -132,7 +163,7 @@
           <div id="questsList" class="quests-list"></div>
         </section>
 
-        <section class="panel" aria-labelledby="upgradesHeading">
+        <section class="panel tab-panel active" data-panel="upgrades" aria-labelledby="upgradesHeading">
           <div class="section-heading">
             <div>
               <p class="eyebrow">Spend Energy</p>
@@ -142,7 +173,31 @@
           <div id="upgradesList" class="upgrades-list"></div>
         </section>
 
-        <section class="panel" aria-labelledby="milestonesHeading">
+        <section class="panel tab-panel" data-panel="skins" aria-labelledby="skinsHeading">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">Cosmetic collection</p>
+              <h2 id="skinsHeading">Skins</h2>
+            </div>
+            <span id="equippedSkinLabel" class="status-pill">Default Core</span>
+          </div>
+          <p class="small-note">Unlock and equip cute collector looks. Some skins add tiny permanent bonuses while equipped.</p>
+          <div id="skinsGrid" class="skins-grid"></div>
+        </section>
+
+        <section class="panel tab-panel" data-panel="collection" aria-labelledby="collectionPanelHeading">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">Meaningful finds</p>
+              <h2 id="collectionPanelHeading">Collection</h2>
+            </div>
+            <span id="collectionCompletionLabel" class="status-pill">0%</span>
+          </div>
+          <p id="collectionRewardLabel" class="small-note">Completion rewards unlock at 25%, 50%, 75%, and 100%.</p>
+          <div id="collectionPanelGrid" class="collection-grid"></div>
+        </section>
+
+        <section class="panel tab-panel" data-panel="achievements" aria-labelledby="milestonesHeading">
           <div class="section-heading">
             <div>
               <p class="eyebrow">Permanent boosts</p>
@@ -175,7 +230,7 @@
           </div>
         </section>
 
-        <section class="panel" aria-labelledby="achievementsHeading">
+        <section class="panel tab-panel" data-panel="achievements" aria-labelledby="achievementsHeading">
           <div class="section-heading">
             <div>
               <p class="eyebrow">Milestones</p>
@@ -186,7 +241,7 @@
           <div id="achievementsList" class="achievements-list"></div>
         </section>
 
-        <section class="panel" aria-labelledby="leaderboardHeading">
+        <section class="panel tab-panel" data-panel="leaderboard" aria-labelledby="leaderboardHeading">
           <div class="section-heading">
             <div>
               <p class="eyebrow">Local rankings</p>
@@ -217,12 +272,12 @@
     <div class="modal-card collection-modal-card">
       <div class="section-heading">
         <div>
-          <p class="eyebrow">图鉴系统</p>
+          <p class="eyebrow">Collection book</p>
           <h2 id="collectionTitle">Collection</h2>
         </div>
         <span id="collectionModalCount" class="status-pill">0 / 0</span>
       </div>
-      <p class="small-note">Unlock cozy items from clicks, upgrades, milestones, prestige, and events. Locked entries show silhouettes until found.</p>
+      <p class="small-note">Unlock cozy items from clicks, upgrades, milestones, prestige, events, and the Event Shop. Rarities and completion rewards make every find matter.</p>
       <div id="collectionGrid" class="collection-grid"></div>
       <button id="collectionCloseButton" class="claim-button" type="button">Close collection</button>
     </div>
@@ -254,6 +309,8 @@
       <button id="helpCloseButton" class="claim-button" type="button">Got it</button>
     </div>
   </div>
+
+  <div id="shareFallback" class="share-fallback hidden" aria-live="polite"><strong>Copy your progress:</strong><textarea id="shareText" readonly></textarea></div>
 
   <div id="toastLayer" class="toast-layer" aria-live="polite" aria-atomic="true"></div>
 
