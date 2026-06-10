@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Collector V2</title>
+  <title>Collector V3</title>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -13,11 +13,12 @@
   <div class="page-shell">
     <header class="hero">
       <div>
-        <p class="eyebrow">Cozy idle clicker · Version 2</p>
+        <p class="eyebrow">Cozy idle clicker · Version 3</p>
         <h1>Collector</h1>
-        <p class="tagline">Gather glowing energy orbs, finish quests, claim daily gifts, and grow a tiny engine that keeps sparkling while you are away.</p>
+        <p class="tagline">Gather glowing Energy, build your collection, complete rotating events, and prestige into a brighter forever engine.</p>
       </div>
       <div class="hero-actions">
+        <button id="collectionButton" class="icon-button secondary" type="button">Collection</button>
         <button id="helpButton" class="icon-button secondary" type="button">How to play</button>
         <button id="muteButton" class="icon-button" type="button" aria-pressed="false" aria-label="Mute sounds">🔊 Sound</button>
       </div>
@@ -58,10 +59,56 @@
             <span class="stat-label">Quests completed</span>
             <strong id="questsCompletedQuick">0</strong>
           </div>
+          <div class="stat-card">
+            <span class="stat-label">Prestige points</span>
+            <strong id="prestigePointsQuick">0</strong>
+          </div>
+          <div class="stat-card">
+            <span class="stat-label">Collection</span>
+            <strong id="collectionCountQuick">0 / 0</strong>
+          </div>
+          <div class="stat-card">
+            <span class="stat-label">Achievements</span>
+            <strong id="achievementCountQuick">0 / 0</strong>
+          </div>
         </div>
       </section>
 
       <aside class="side-stack">
+
+        <section class="panel event-card" aria-labelledby="eventHeading">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">Limited-time sparkle</p>
+              <h2 id="eventHeading">Daily & Event Tasks</h2>
+            </div>
+            <span id="eventTimer" class="status-pill">Loading</span>
+          </div>
+          <div class="event-summary">
+            <strong id="eventName">Starlight Festival</strong>
+            <span id="eventDates">Rotating event window</span>
+          </div>
+          <div id="dailyTasksList" class="quests-list"></div>
+          <div id="eventTasksList" class="quests-list event-tasks"></div>
+        </section>
+
+        <section class="panel prestige-card" aria-labelledby="prestigeHeading">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">Rebirth engine</p>
+              <h2 id="prestigeHeading">Prestige / Rebirth</h2>
+            </div>
+            <span class="status-pill"><strong id="prestigeCount">0</strong> rebirths</span>
+          </div>
+          <p id="prestigeDescription" class="small-note">Earn enough Energy or upgrade levels to rebirth for permanent points.</p>
+          <div class="prestige-progress">
+            <div class="progress-track" aria-label="Prestige progress"><span id="prestigeProgress" class="progress-fill" style="--progress: 0%"></span></div>
+            <span id="prestigePointsLabel" class="small-note">0 points available</span>
+          </div>
+          <button id="prestigeButton" class="prestige-button" type="button">Prestige unavailable</button>
+          <div id="prestigeShop" class="prestige-shop"></div>
+        </section>
+
         <section class="panel daily-card" aria-labelledby="dailyHeading">
           <div class="section-heading">
             <div>
@@ -120,6 +167,9 @@
             <div class="stat-card"><span class="stat-label">Clicks</span><strong id="statClicks">0</strong></div>
             <div class="stat-card"><span class="stat-label">Upgrades</span><strong id="statUpgrades">0</strong></div>
             <div class="stat-card"><span class="stat-label">Achievements</span><strong id="statAchievements">0</strong></div>
+            <div class="stat-card"><span class="stat-label">Collection</span><strong id="statCollection">0</strong></div>
+            <div class="stat-card"><span class="stat-label">Prestige</span><strong id="statPrestige">0</strong></div>
+            <div class="stat-card"><span class="stat-label">Prestige points</span><strong id="statPrestigePoints">0</strong></div>
             <div class="stat-card"><span class="stat-label">Quests</span><strong id="statQuests">0</strong></div>
             <div class="stat-card"><span class="stat-label">Multiplier</span><strong id="statMultiplier">1x</strong></div>
           </div>
@@ -132,7 +182,18 @@
               <h2 id="achievementsHeading">Achievements</h2>
             </div>
           </div>
+          <div class="achievement-summary"><span id="achievementBonusLabel">Bonus: +0%</span></div>
           <div id="achievementsList" class="achievements-list"></div>
+        </section>
+
+        <section class="panel" aria-labelledby="leaderboardHeading">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">Local rankings</p>
+              <h2 id="leaderboardHeading">Leaderboard</h2>
+            </div>
+          </div>
+          <div id="leaderboardList" class="leaderboard-list"></div>
         </section>
 
         <section class="panel compact-panel" aria-label="Progress controls">
@@ -152,6 +213,33 @@
     </div>
   </div>
 
+  <div id="collectionModal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="collectionTitle">
+    <div class="modal-card collection-modal-card">
+      <div class="section-heading">
+        <div>
+          <p class="eyebrow">图鉴系统</p>
+          <h2 id="collectionTitle">Collection</h2>
+        </div>
+        <span id="collectionModalCount" class="status-pill">0 / 0</span>
+      </div>
+      <p class="small-note">Unlock cozy items from clicks, upgrades, milestones, prestige, and events. Locked entries show silhouettes until found.</p>
+      <div id="collectionGrid" class="collection-grid"></div>
+      <button id="collectionCloseButton" class="claim-button" type="button">Close collection</button>
+    </div>
+  </div>
+
+  <div id="prestigeModal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="prestigeModalTitle">
+    <div class="modal-card">
+      <p class="eyebrow">Prestige / Rebirth</p>
+      <h2 id="prestigeModalTitle">Begin a brighter run?</h2>
+      <p id="prestigeModalMessage">Prestige will reset Energy and upgrades, then grant points.</p>
+      <div class="modal-actions">
+        <button id="confirmPrestigeButton" class="prestige-button" type="button">Confirm Rebirth</button>
+        <button id="cancelPrestigeButton" class="danger-button" type="button">Cancel</button>
+      </div>
+    </div>
+  </div>
+
   <div id="helpModal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="helpTitle">
     <div class="modal-card help-card">
       <p class="eyebrow">Quick guide</p>
@@ -159,8 +247,9 @@
       <ul>
         <li>Click the glowing collector to gather Energy.</li>
         <li>Buy upgrades to improve clicks, automatic income, multipliers, and lucky bonuses.</li>
-        <li>Finish quests and claim the daily reward for bonus Energy.</li>
-        <li>Milestones unlock permanent production boosts based on total Energy earned.</li>
+        <li>Finish quests, daily tasks, limited-time event tasks, and claim the daily reward for bonus Energy.</li>
+        <li>Milestones unlock permanent production boosts and collectible items.</li>
+        <li>Use Prestige / Rebirth when ready to reset a run for permanent points, bonuses, cosmetics, and special collectibles.</li>
       </ul>
       <button id="helpCloseButton" class="claim-button" type="button">Got it</button>
     </div>
