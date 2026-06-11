@@ -1,8 +1,10 @@
-const SAVE_KEY = "collectorSaveV4";
-const LEGACY_SAVE_KEY = "collectorSaveV3";
+const SAVE_KEY = "collectorSaveV5";
+const LEGACY_SAVE_KEY = "collectorSaveV4";
+const OLDER_SAVE_KEY = "collectorSaveV3";
 const OLDEST_SAVE_KEY = "collectorSaveV1";
-const LEADERBOARD_KEY = "collectorLeaderboardV4";
-const LEGACY_LEADERBOARD_KEY = "collectorLeaderboardV3";
+const LEADERBOARD_KEY = "collectorLeaderboardV5";
+const LEGACY_LEADERBOARD_KEY = "collectorLeaderboardV4";
+const OLDER_LEADERBOARD_KEY = "collectorLeaderboardV3";
 const OFFLINE_CAP_MS = 8 * 60 * 60 * 1000;
 const ACTIVE_QUEST_COUNT = 3;
 const PURCHASE_FLASH_MS = 520;
@@ -194,6 +196,8 @@ const elements = {
   collectionPanelGrid: document.querySelector("#collectionPanelGrid"),
   achievementCountQuick: document.querySelector("#achievementCountQuick"),
   collectorButton: document.querySelector("#collectorButton"),
+  coreStageLabel: document.querySelector("#coreStageLabel"),
+  coreStatusLabel: document.querySelector("#coreStatusLabel"),
   floatLayer: document.querySelector("#floatLayer"),
   particleLayer: document.querySelector("#particleLayer"),
   upgradesList: document.querySelector("#upgradesList"),
@@ -298,6 +302,28 @@ function skinMultiplierBonus() {
   return equippedSkin().multiplierBonus || 0;
 }
 
+function coreEvolutionStage() {
+  const progressScore =
+    state.totalEnergy +
+    state.prestige.count * 35000 +
+    totalUpgradeLevels() * 900 +
+    Math.max(0, productionMultiplier() - 1) * 12000 +
+    state.upgrades.autoCollector * 650;
+  if (progressScore >= 100000 || state.prestige.count >= 3 || productionMultiplier() >= 4) return 5;
+  if (progressScore >= 35000 || state.prestige.count >= 1 || totalUpgradeLevels() >= 24) return 4;
+  if (progressScore >= 10000 || totalUpgradeLevels() >= 12 || productionMultiplier() >= 2.2) return 3;
+  if (progressScore >= 1500 || totalUpgradeLevels() >= 5 || productionMultiplier() >= 1.45) return 2;
+  return 1;
+}
+
+function completedRewardWaiting() {
+  const dailyReady = state.lastDailyClaimDate !== todayKey();
+  const challengeReady = state.dailyChallenge && state.dailyChallenge.type && !state.dailyChallenge.claimed && dailyChallengeProgress() >= state.dailyChallenge.goal;
+  const dailyTaskReady = state.dailyTasks.tasks.some((task) => !task.claimed && timedTaskProgress(task) >= task.goal);
+  const eventTaskReady = state.event.tasks.some((task) => !task.claimed && timedTaskProgress(task) >= task.goal);
+  return dailyReady || challengeReady || dailyTaskReady || eventTaskReady;
+}
+
 function eventBoostBonus() {
   return state.eventShop.boostUntil > Date.now() ? 0.25 : 0;
 }
@@ -390,14 +416,15 @@ function collectEnergy(event) {
   const luckyHit = Math.random() < luckyChance();
   const amount = luckyHit ? baseAmount * 5 : baseAmount;
   addEnergy(amount);
-  showFloatingText(event, `+${formatNumber(amount)}${luckyHit ? " Lucky!" : ""}`);
+  showFloatingText(event, `+${formatNumber(amount)}${luckyHit ? " Lucky!" : ""}`, luckyHit);
   createClickParticles(event, luckyHit);
+  triggerCoreFlash(luckyHit ? "lucky" : "click");
   updateDailyChallenge();
   playSound(luckyHit ? "achievement" : "click");
   elements.collectorButton.classList.remove("pop");
   void elements.collectorButton.offsetWidth;
   elements.collectorButton.classList.add("pop");
-  setTimeout(() => elements.collectorButton.classList.remove("pop"), 180);
+  setTimeout(() => elements.collectorButton.classList.remove("pop"), 240);
 }
 
 function buyUpgrade(id) {
@@ -449,6 +476,7 @@ function claimDailyReward() {
   updateDailyChallenge();
   showToast("Daily reward claimed!", `You received ${formatNumber(reward)} Energy.`);
   playSound("achievement");
+  triggerCoreFlash("celebrate");
 }
 
 function prestigePointsAvailable() {
@@ -512,6 +540,7 @@ function render() {
   elements.collectorButton.classList.toggle("prism-skin", Boolean(state.prestige.cosmetics.prismSkin));
   elements.collectorButton.classList.add(equippedSkin().className);
   elements.collectorButton.querySelector(".collector-core").textContent = equippedSkin().icon;
+  renderCoreVisualState();
 
   elements.statEnergy.textContent = formatNumber(state.energy);
   elements.statTotalEnergy.textContent = formatNumber(state.totalEnergy);
@@ -869,6 +898,7 @@ function unlockSkin(id) {
 function equipSkin(id) {
   if (!state.skins.unlocked[id]) return;
   state.skins.equipped = id;
+  triggerCoreFlash("celebrate");
   const skin = equippedSkin();
   showToast("Skin equipped", `${skin.name} is now your Collector look.`);
   render();
@@ -1074,12 +1104,12 @@ function checkTimedTasks() {
   checkAchievements();
 }
 
-function showFloatingText(event, text) {
+function showFloatingText(event, text, luckyHit = false) {
   const floatText = document.createElement("span");
   const bounds = elements.floatLayer.getBoundingClientRect();
   const x = event && event.clientX ? event.clientX - bounds.left : bounds.width / 2;
   const y = event && event.clientY ? event.clientY - bounds.top : bounds.height / 2;
-  floatText.className = "float-text";
+  floatText.className = `float-text ${luckyHit ? "lucky-float" : ""}`;
   floatText.textContent = text;
   floatText.style.left = `${x}px`;
   floatText.style.top = `${y}px`;
@@ -1097,18 +1127,40 @@ function createClickParticles(event, luckyHit) {
     const particle = document.createElement("span");
     const angle = (Math.PI * 2 * index) / count + Math.random() * 0.35;
     const distance = 46 + Math.random() * (luckyHit ? 72 : 42);
-    particle.className = "particle";
+    particle.className = `particle ${index % 3 === 0 ? "ring-shard" : ""}`;
     particle.style.setProperty("--x", `${centerX}px`);
     particle.style.setProperty("--y", `${centerY}px`);
     particle.style.setProperty("--dx", `${Math.cos(angle) * distance}px`);
     particle.style.setProperty("--dy", `${Math.sin(angle) * distance}px`);
     particle.style.setProperty("--size", `${Math.round(5 + Math.random() * 7)}px`);
-    particle.style.setProperty("--particle-color", luckyHit ? "#ffb86c" : "#22d3ee");
+    particle.style.setProperty("--particle-color", luckyHit ? "#facc15" : getComputedStyle(elements.collectorButton).getPropertyValue("--orb-a") || "#22d3ee");
     elements.particleLayer.append(particle);
     setTimeout(() => particle.remove(), 650);
   }
 }
 
+
+function triggerCoreFlash(type = "click") {
+  elements.collectorButton.classList.remove("special-flash", "celebrating");
+  if (type === "lucky") elements.collectorButton.classList.add("special-flash");
+  if (type === "celebrate") elements.collectorButton.classList.add("celebrating", "special-flash");
+  setTimeout(() => elements.collectorButton.classList.remove("special-flash", "celebrating"), type === "celebrate" ? 900 : 420);
+}
+
+function renderCoreVisualState() {
+  const stage = coreEvolutionStage();
+  elements.collectorButton.classList.remove("stage-1", "stage-2", "stage-3", "stage-4", "stage-5", "prestige-ready", "boost-active", "reward-ready");
+  elements.collectorButton.classList.add(`stage-${stage}`);
+  elements.collectorButton.classList.toggle("prestige-ready", prestigePointsAvailable() > 0);
+  elements.collectorButton.classList.toggle("boost-active", eventBoostBonus() > 0);
+  elements.collectorButton.classList.toggle("reward-ready", completedRewardWaiting());
+  elements.coreStageLabel.textContent = `Core Stage ${stage}`;
+  const statusParts = [];
+  if (prestigePointsAvailable() > 0) statusParts.push("Prestige ready");
+  if (eventBoostBonus() > 0) statusParts.push("Boost aura");
+  if (completedRewardWaiting()) statusParts.push("Reward ready");
+  elements.coreStatusLabel.textContent = statusParts.length ? statusParts.join(" · ") : ["Calm glow", "Brightening", "Ring formed", "Energy swirl", "Evolved core"][stage - 1];
+}
 
 function glowBurst() {
   const burst = document.createElement("span");
@@ -1118,6 +1170,7 @@ function glowBurst() {
 }
 
 function celebrate(type = "sparkle") {
+  triggerCoreFlash("celebrate");
   const count = type === "prestige" || type === "skin" ? 24 : 14;
   for (let index = 0; index < count; index += 1) {
     const sparkle = document.createElement("span");
@@ -1214,7 +1267,7 @@ function normalizeState(parsed) {
 }
 
 function loadGame() {
-  const saved = localStorage.getItem(SAVE_KEY) || localStorage.getItem(LEGACY_SAVE_KEY) || localStorage.getItem(OLDEST_SAVE_KEY);
+  const saved = localStorage.getItem(SAVE_KEY) || localStorage.getItem(LEGACY_SAVE_KEY) || localStorage.getItem(OLDER_SAVE_KEY) || localStorage.getItem(OLDEST_SAVE_KEY);
   if (!saved) {
     const freshState = createDefaultState();
     freshState.lastPlayedAt = Date.now();
@@ -1256,7 +1309,7 @@ function applyOfflineEarnings(loadedState, previousLastPlayed) {
 
 function getLeaderboard() {
   try {
-    const saved = localStorage.getItem(LEADERBOARD_KEY) || localStorage.getItem(LEGACY_LEADERBOARD_KEY);
+    const saved = localStorage.getItem(LEADERBOARD_KEY) || localStorage.getItem(LEGACY_LEADERBOARD_KEY) || localStorage.getItem(OLDER_LEADERBOARD_KEY);
     return JSON.parse(saved) || [];
   } catch {
     return [];
@@ -1350,7 +1403,7 @@ function resetProgress() {
   localStorage.removeItem(LEGACY_LEADERBOARD_KEY);
   ensureActiveQuests();
   ensureTimedTasks();
-  showToast("Progress reset", "A fresh Collector V4 run is ready.");
+  showToast("Progress reset", "A fresh Collector V5 run is ready.");
   render();
   saveGame();
 }
